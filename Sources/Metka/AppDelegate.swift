@@ -4,6 +4,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private let camera = CameraController()
     private var cameraView: CameraView?
+    private var stabilizer = GestureStabilizer() // 15 кадров вкл / 8 выкл (~0.5 с / ~0.27 с)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let view = CameraView(frame: NSRect(x: 0, y: 0, width: 960, height: 640))
@@ -14,8 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         camera.onStatus = { status in
             print("камера: \(status)")
         }
-        camera.onFrame = { observation in
-            // Task 8 подключит сюда распознавание; пока просто держим кадры.
+        camera.onFrame = { [weak self] observation in
+            guard let self else { return }
+            let raw = observation.handPoints.flatMap { GestureClassifier.classify($0) }
+            let stable = self.stabilizer.feed(raw)
+            if raw != nil || stable != nil || observation.face != nil {
+                print("жест: \(raw?.rawValue ?? "—") | стабильный: \(stable?.rawValue ?? "—") | лицо: \(observation.face != nil ? "да" : "нет")")
+            }
         }
         camera.start()
 
