@@ -74,7 +74,9 @@ final class OverlayView: NSView {
 
     func updateStatus(raw: HandGesture?, stable: HandGesture?, faceSeen: Bool) {
         gestureLabel.stringValue = "Жест: \(stable?.rawValue ?? raw?.rawValue ?? "—")\(stable == nil && raw != nil ? " (удержите)" : "")"
+        gestureLabel.sizeToFit()
         faceLabel.stringValue = "Лицо: \(faceSeen ? "найдено" : "нет")"
+        faceLabel.sizeToFit()
     }
 
     // ---------- Маска ----------
