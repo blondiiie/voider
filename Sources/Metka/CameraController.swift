@@ -57,8 +57,11 @@ final class CameraController: NSObject, AVCaptureVideoDataOutputSampleBufferDele
         guard session.canAddOutput(output) else { return false }
         session.addOutput(output)
         if let conn = output.connection(with: .video), conn.isVideoMirroringSupported {
-            conn.isVideoMirrored = true // selfie-зеркало: буферы и превью согласованы
+            conn.isVideoMirrored = true // selfie-зеркало для буферов распознавания
         }
+        // ВАЖНО: превью зеркалит изображение относительно этих буферов,
+        // поэтому координаты Vision приводятся к экрану флипом X в
+        // VisionProcessor.faceInfo (display()). Не удалять ни один флип!
         return true
     }
 

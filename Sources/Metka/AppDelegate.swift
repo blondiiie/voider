@@ -58,4 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let phases: [ContentKind] = [.audio, .photo, .video, .idle]
         return phases[min(Int(Date().timeIntervalSince(start) / 2.5), phases.count - 1)]
     }
+
+    // Закрыли окно — завершаем приложение, иначе камера и распознавание
+    // продолжают работать вхолостую (горящий индикатор камеры).
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
 }
