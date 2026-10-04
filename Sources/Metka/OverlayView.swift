@@ -2,7 +2,7 @@ import AppKit
 import AVFoundation
 
 final class OverlayView: NSView {
-    // Константы посадки маски — подбираются в Step 5 (калибровка).
+    // Константы посадки маски — калибруются под конкретный mask.png.
     var maskWidthFactor: CGFloat = 3.6      // ширина маски = межглазное расстояние × коэффициент
     var maskDropFactor: CGFloat = 0.55      // опустить центр маски ниже линии глаз
 
@@ -12,7 +12,7 @@ final class OverlayView: NSView {
     private let cameraStatusLabel = OverlayView.label(fontSize: 18)
 
     private let maskLayer = CALayer()
-    private var maskAspect: CGFloat = 2.0   // ширина/высота mask.png (800×400)
+    private var maskAspect: CGFloat = 2.0   // ширина/высота mask.png
 
     private let photoLayer = CALayer()
     private var playerLayer: AVPlayerLayer?
@@ -22,6 +22,9 @@ final class OverlayView: NSView {
     private var audioIndicator: CALayer?
     private var currentKind: ContentKind = .idle
 
+    // ВАЖНО: все слои-оверлеи создаются и добавляются здесь, в init.
+    // Слои, добавленные в слой layer-backed вида после установки в окно,
+    // в этой конфигурации не отрисовывались — проверено эмпирически.
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -59,6 +62,53 @@ final class OverlayView: NSView {
         photoLayer.opacity = 0
         photoLayer.isHidden = true
         layer?.addSublayer(photoLayer)
+
+        if let url = ContentLoader.videoURL {
+            let player = AVQueuePlayer()
+            looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
+            let pl = AVPlayerLayer(player: player)
+            pl.cornerRadius = 14
+            pl.masksToBounds = true
+            pl.frame = centeredVideoRect()
+            pl.opacity = 0
+            pl.isHidden = true
+            layer?.addSublayer(pl)
+            playerLayer = pl
+            queuePlayer = player
+        }
+
+        if let url = ContentLoader.audioURL {
+            audioPlayer = try? AVAudioPlayer(contentsOf: url)
+        }
+
+        let container = CALayer()
+        container.backgroundColor = NSColor(white: 0, alpha: 0.55).cgColor
+        container.cornerRadius = 14
+        let label = CATextLayer()
+        label.string = "🔊 Аудио"
+        label.fontSize = 18
+        label.foregroundColor = NSColor.white.cgColor
+        label.alignmentMode = .center
+        label.frame = CGRect(x: 0, y: 46, width: 180, height: 30)
+        container.addSublayer(label)
+        for i in 0..<4 {
+            let bar = CALayer()
+            bar.frame = CGRect(x: CGFloat(20 + i * 38), y: 16, width: 18, height: 20)
+            bar.backgroundColor = NSColor.white.cgColor
+            bar.cornerRadius = 4
+            let anim = CABasicAnimation(keyPath: "transform.scale.y")
+            anim.fromValue = 0.4
+            anim.toValue = 2.2
+            anim.duration = 0.35 + Double(i) * 0.09
+            anim.autoreverses = true
+            anim.repeatCount = .infinity
+            bar.add(anim, forKey: "bounce")
+            container.addSublayer(bar)
+        }
+        container.frame = CGRect(x: bounds.midX - 90, y: bounds.midY - 45, width: 180, height: 90)
+        container.isHidden = true
+        layer?.addSublayer(container)
+        audioIndicator = container
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) не используется") }
 
@@ -154,25 +204,11 @@ final class OverlayView: NSView {
     }
 
     private func startVideo() {
-        guard let url = ContentLoader.videoURL else { return }
-        if playerLayer == nil {
-            let player = AVQueuePlayer()
-            player.isMuted = false
-            looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
-            let pl = AVPlayerLayer(player: player)
-            pl.frame = centeredVideoRect()
-            pl.cornerRadius = 14
-            pl.shadowColor = NSColor.black.cgColor
-            pl.shadowOpacity = 0.6
-            pl.shadowRadius = 18
-            layer?.addSublayer(pl)
-            playerLayer = pl
-            queuePlayer = player
-        }
-        playerLayer?.frame = centeredVideoRect()
+        guard let pl = playerLayer else { return }
+        pl.frame = centeredVideoRect()
         queuePlayer?.seek(to: .zero)
         queuePlayer?.play()
-        if let pl = playerLayer { fade(pl, visible: true) }
+        fade(pl, visible: true)
     }
 
     private func stopVideo() {
@@ -181,59 +217,20 @@ final class OverlayView: NSView {
     }
 
     private func startAudio() {
-        if audioPlayer == nil, let url = ContentLoader.audioURL {
-            audioPlayer = try? AVAudioPlayer(contentsOf: url)
-        }
+        audioPlayer?.currentTime = 0
         audioPlayer?.numberOfLoops = -1
         audioPlayer?.play()
-        showAudioIndicator()
+        audioIndicator?.isHidden = false
     }
 
     private func stopAudio() {
         audioPlayer?.pause()
-        hideAudioIndicator()
+        audioIndicator?.isHidden = true
     }
 
     private func centeredVideoRect() -> CGRect {
         let w: CGFloat = 480, h = w * 9 / 16
         return CGRect(x: bounds.midX - w / 2, y: bounds.midY - h / 2, width: w, height: h)
-    }
-
-    private func showAudioIndicator() {
-        if audioIndicator == nil {
-            let container = CALayer()
-            container.backgroundColor = NSColor(white: 0, alpha: 0.55).cgColor
-            container.cornerRadius = 14
-            let label = CATextLayer()
-            label.string = "🔊 Аудио"
-            label.fontSize = 18
-            label.foregroundColor = NSColor.white.cgColor
-            label.alignmentMode = .center
-            label.frame = CGRect(x: 0, y: 46, width: 180, height: 30)
-            container.addSublayer(label)
-            for i in 0..<4 {
-                let bar = CALayer()
-                bar.frame = CGRect(x: CGFloat(20 + i * 38), y: 16, width: 18, height: 20)
-                bar.backgroundColor = NSColor.white.cgColor
-                bar.cornerRadius = 4
-                let anim = CABasicAnimation(keyPath: "transform.scale.y")
-                anim.fromValue = 0.4
-                anim.toValue = 2.2
-                anim.duration = 0.35 + Double(i) * 0.09
-                anim.autoreverses = true
-                anim.repeatCount = .infinity
-                bar.add(anim, forKey: "bounce")
-                container.addSublayer(bar)
-            }
-            container.frame = CGRect(x: bounds.midX - 90, y: bounds.midY - 45, width: 180, height: 90)
-            layer?.addSublayer(container)
-            audioIndicator = container
-        }
-        audioIndicator?.isHidden = false
-    }
-
-    private func hideAudioIndicator() {
-        audioIndicator?.isHidden = true
     }
 
     // ---------- Общее ----------

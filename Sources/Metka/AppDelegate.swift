@@ -6,6 +6,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cameraView: CameraView?
     private var stabilizer = GestureStabilizer()
 
+    // Демо-режим: `open Metka.app --args -demo-cycle` — первые 10 секунд
+    // после старта камеры контент сменяется сам (аудио → фото → видео).
+    private let demoCycle = CommandLine.arguments.contains("-demo-cycle")
+    private var demoStart: Date?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let view = CameraView(frame: NSRect(x: 0, y: 0, width: 960, height: 640))
         view.autoresizingMask = [.width, .height]
@@ -29,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                           layerSize: overlay.bounds.size)
             overlay.updateStatus(raw: raw, stable: stable, faceSeen: observation.face != nil)
             overlay.updateFace(observation.face, mapper: mapper)
-            overlay.setContent(ContentKind.from(stable))
+            overlay.setContent(self.currentKind(stable: stable))
         }
         camera.start()
 
@@ -42,5 +47,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.window = window
+    }
+
+    private func currentKind(stable: HandGesture?) -> ContentKind {
+        guard demoCycle else { return ContentKind.from(stable) }
+        if demoStart == nil { demoStart = Date() }
+        guard let start = demoStart, Date().timeIntervalSince(start) < 10 else {
+            return ContentKind.from(stable)
+        }
+        let phases: [ContentKind] = [.audio, .photo, .video, .idle]
+        return phases[min(Int(Date().timeIntervalSince(start) / 2.5), phases.count - 1)]
     }
 }
