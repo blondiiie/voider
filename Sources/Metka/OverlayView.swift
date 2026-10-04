@@ -38,7 +38,10 @@ final class OverlayView: NSView {
         if let url = ContentLoader.maskURL,
            let image = NSImage(contentsOf: url),
            let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            maskLayer.contents = cg
+            // Содержимое CALayer в этой конфигурации отрисовывается
+            // перевёрнутым по вертикали — заранее отражаем маску,
+            // чтобы очки были сверху, усы снизу.
+            maskLayer.contents = OverlayView.verticallyFlipped(cg)
             maskAspect = CGFloat(cg.width) / CGFloat(cg.height)
         }
         maskLayer.opacity = 0
@@ -123,6 +126,21 @@ final class OverlayView: NSView {
         l.layer?.masksToBounds = true
         l.isBezeled = false
         return l
+    }
+
+    /// Вертикально отражённая копия картинки (для слоёв, которые
+    /// отрисовывают contents вверх ногами).
+    private static func verticallyFlipped(_ image: CGImage) -> CGImage {
+        let w = image.width, h = image.height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return image
+        }
+        ctx.translateBy(x: 0, y: CGFloat(h))
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage() ?? image
     }
 
     // ---------- Статусы ----------
