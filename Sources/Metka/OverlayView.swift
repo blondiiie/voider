@@ -38,10 +38,7 @@ final class OverlayView: NSView {
         if let url = ContentLoader.maskURL,
            let image = NSImage(contentsOf: url),
            let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            // Содержимое CALayer в этой конфигурации отрисовывается
-            // перевёрнутым по вертикали — заранее отражаем маску,
-            // чтобы очки были сверху, усы снизу.
-            maskLayer.contents = OverlayView.verticallyFlipped(cg)
+            maskLayer.contents = cg
             maskAspect = CGFloat(cg.width) / CGFloat(cg.height)
         }
         maskLayer.opacity = 0
@@ -128,21 +125,6 @@ final class OverlayView: NSView {
         return l
     }
 
-    /// Вертикально отражённая копия картинки (для слоёв, которые
-    /// отрисовывают contents вверх ногами).
-    private static func verticallyFlipped(_ image: CGImage) -> CGImage {
-        let w = image.width, h = image.height
-        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
-                                  bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-            return image
-        }
-        ctx.translateBy(x: 0, y: CGFloat(h))
-        ctx.scaleBy(x: 1, y: -1)
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-        return ctx.makeImage() ?? image
-    }
-
     // ---------- Статусы ----------
 
     func showCameraStatus(_ status: CameraStatus) {
@@ -180,19 +162,24 @@ final class OverlayView: NSView {
             fade(maskLayer, visible: false)
             return
         }
-        let left = mapper.point(face.leftEye)
-        let right = mapper.point(face.rightEye)
-        let eyeDistance = hypot(left.x - right.x, left.y - right.y)
+        var a = mapper.point(face.leftEye)
+        var b = mapper.point(face.rightEye)
+        // После приведения координат к экрану (флип X в VisionProcessor)
+        // именованные «левый/правый» глаз меняются местами. Упорядочиваем
+        // пару по экранному X — иначе atan2 даёт угол со сдвигом на 180°
+        // и маска висит вверх ногами.
+        if a.x > b.x { swap(&a, &b) }
+        let eyeDistance = hypot(b.x - a.x, b.y - a.y)
         let width = eyeDistance * maskWidthFactor
         let height = width / maskAspect
-        let center = CGPoint(x: (left.x + right.x) / 2,
-                             y: (left.y + right.y) / 2 - eyeDistance * maskDropFactor)
+        let center = CGPoint(x: (a.x + b.x) / 2,
+                             y: (a.y + b.y) / 2 - eyeDistance * maskDropFactor)
         CATransaction.begin()
         CATransaction.setDisableActions(true) // маска следует за лицом без «плаваний»
         maskLayer.bounds = CGRect(x: 0, y: 0, width: width, height: height)
         maskLayer.position = center
         maskLayer.setAffineTransform(
-            CGAffineTransform(rotationAngle: atan2(right.y - left.y, right.x - left.x)))
+            CGAffineTransform(rotationAngle: atan2(b.y - a.y, b.x - a.x)))
         CATransaction.commit()
         fade(maskLayer, visible: true)
     }
